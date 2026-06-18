@@ -8,6 +8,7 @@ sdk_version: "4.44.0"
 app_file: app.py
 pinned: false
 license: mit
+python_version: "3.11"
 short_description: Live webcam age detection using DeepFace + OpenCV
 ---
 
