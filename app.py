@@ -1,12 +1,14 @@
+import os
 import gradio as gr
 import cv2
 import numpy as np
 from deepface import DeepFace
 
 # ── Color palette ──────────────────────────────────────────────────
-BOX_COLOR   = (0, 255, 128)   # bright green
-TEXT_COLOR  = (255, 255, 255) # white
-BG_COLOR    = (0, 180, 90)    # label background
+BOX_COLOR = (0, 255, 128)    # bright green
+TEXT_COLOR = (255, 255, 255)  # white
+BG_COLOR = (0, 180, 90)       # label background
+
 
 def detect_age_in_frame(frame):
     """
@@ -24,8 +26,8 @@ def detect_age_in_frame(frame):
         results = DeepFace.analyze(
             bgr,
             actions=["age"],
-            enforce_detection=False,   # don't crash if no face found
-            detector_backend="opencv", # fast CPU detector
+            enforce_detection=False,  # don't crash if no face found
+            detector_backend="opencv",  # fast CPU detector
             silent=True,
         )
 
@@ -35,7 +37,7 @@ def detect_age_in_frame(frame):
 
         for res in results:
             region = res.get("region", {})
-            age    = res.get("age", None)
+            age = res.get("age", None)
 
             x = region.get("x", 0)
             y = region.get("y", 0)
@@ -60,57 +62,10 @@ def detect_age_in_frame(frame):
                 (x + 5, y - 5),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.9, TEXT_COLOR, 2, cv2.LINE_AA,
             )
-
     except Exception:
-        pass   # no face detected — return original frame
+        pass  # no face detected — return original frame
 
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
-# ── Gradio UI ──────────────────────────────────────────────────────
-CSS = """
-body { background: #0f1117; font-family: 'Inter', sans-serif; }
-h1   { text-align: center; color: #00ff88; font-size: 2rem; margin-bottom: 0.2rem; }
-.subtitle { text-align: center; color: #aaa; margin-bottom: 1.5rem; font-size: 1rem; }
-.gr-button-primary { background: #00ff88 !important; color: #000 !important;
-                     font-weight: bold; border-radius: 8px; }
-footer { display: none !important; }
-"""
-
-with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
-
-    gr.HTML("<h1>🎯 Real-Time Age Detection</h1>")
-    gr.HTML('<p class="subtitle">Allow camera access → your age appears instantly on screen</p>')
-
-    with gr.Row(equal_height=True):
-        with gr.Column():
-            gr.Markdown("### 📷 Live Camera")
-            webcam_input = gr.Image(
-                sources=["webcam"],
-                streaming=True,
-                label="Camera Feed",
-                mirror_webcam=True,
-            )
-        with gr.Column():
-            gr.Markdown("### 🔍 Detection Output")
-            output_image = gr.Image(
-                label="Age Detection",
-                streaming=True,
-            )
-
-    gr.HTML("""
-    <div style='text-align:center; color:#666; margin-top:1rem; font-size:0.85rem;'>
-        Powered by DeepFace · OpenCV · Gradio &nbsp;|&nbsp; No data is stored
-    </div>
-    """)
-
-    # Wire webcam stream → process → output
-    webcam_input.stream(
-        fn=detect_age_in_frame,
-        inputs=webcam_input,
-        outputs=output_image,
-        stream_every=0.1,   # ~10 fps processing
-    )
-
-if __name__ == "__main__":
-    demo.launch()
+# ── Gradio UI ────────────────────────────────────────
