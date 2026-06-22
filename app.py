@@ -357,7 +357,6 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
                 sources=["webcam"],
                 streaming=True,
                 show_label=False,
-                mirror_webcam=True,
                 elem_id="webcam-input",
             )
             output_image = gr.Image(
