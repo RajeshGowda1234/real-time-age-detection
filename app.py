@@ -313,71 +313,104 @@ footer {
     margin-top: 1rem;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
+
+/* Style the login panel */
+.login-container {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 16px;
+    padding: 2.5rem !important;
+    margin: 4rem auto 0 auto !important;
+    max-width: 400px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
 """
 
 with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
+    
+    # Custom Login State
+    def check_login(username, password):
+        if username == "admin" and password == "admin123":
+            return [gr.update(visible=False), gr.update(visible=True)]
+        else:
+            raise gr.Error("Incorrect username or password.")
 
-    gr.HTML("<h1>🎯 Real-Time Age Detection</h1>")
-    gr.HTML('<p class="subtitle">Click the camera below → allow access → see your age detected in real-time!</p>')
-
-    # Camera Single-Frame Overlay Container
-    with gr.Column(elem_classes="camera-wrapper"):
-        webcam_input = gr.Image(
-            sources=["webcam"],
-            streaming=True,
-            show_label=False,
-            mirror_webcam=True,
-            elem_id="webcam-input",
-        )
-        output_image = gr.Image(
-            show_label=False,
-            elem_id="output-image",
-        )
-
-    # Settings Control Panel
-    with gr.Column(elem_classes="settings-container"):
-        gr.Markdown("### ⚙️ Detection Settings")
+    # ── Login Screen ──
+    with gr.Column(visible=True, elem_classes="login-container") as login_panel:
+        gr.HTML("<h1 style='font-size:2rem; margin-bottom:0.5rem;'>🔐 Secure Login</h1>")
+        gr.HTML('<p class="subtitle" style="margin-bottom:1.5rem;">Please enter your credentials to access the age detection app.</p>')
         
-        with gr.Row():
-            model_type = gr.Dropdown(
-                choices=["Custom Trained MobileNetV2", "DeepFace VGG-Face (Default)"],
-                value="Custom Trained MobileNetV2",
-                label="Age Prediction Model",
-                info="Custom Trained MobileNetV2 regression model is highly optimized for accuracy."
+        with gr.Column():
+            username_input = gr.Textbox(label="Username", placeholder="admin", interactive=True)
+            password_input = gr.Textbox(label="Password", type="password", placeholder="admin123", interactive=True)
+            login_btn = gr.Button("Sign In", variant="primary", size="lg")
+
+    # ── Main Application Dashboard ──
+    with gr.Column(visible=False) as app_panel:
+        gr.HTML("<h1>🎯 Real-Time Age Detection</h1>")
+        gr.HTML('<p class="subtitle">Click the camera below → allow access → see your age detected in real-time!</p>')
+
+        # Camera Single-Frame Overlay Container
+        with gr.Column(elem_classes="camera-wrapper"):
+            webcam_input = gr.Image(
+                sources=["webcam"],
+                streaming=True,
+                show_label=False,
+                mirror_webcam=True,
+                elem_id="webcam-input",
             )
-            detector_backend = gr.Dropdown(
-                choices=["ssd", "opencv", "mediapipe", "retinaface", "mtcnn"],
-                value="ssd",
-                label="Face Detector Backend",
-                info="SSD is fast & accurate. RetinaFace is most accurate but slower."
+            output_image = gr.Image(
+                show_label=False,
+                elem_id="output-image",
             )
+
+        # Settings Control Panel
+        with gr.Column(elem_classes="settings-container"):
+            gr.Markdown("### ⚙️ Detection Settings")
             
-        smoothing_factor = gr.Slider(
-            minimum=1,
-            maximum=20,
-            value=8,
-            step=1,
-            label="Prediction Smoothing (Flicker Reduction)",
-            info="Higher values average ages over more frames to reduce jumps/flicker."
+            with gr.Row():
+                model_type = gr.Dropdown(
+                    choices=["Custom Trained MobileNetV2", "DeepFace VGG-Face (Default)"],
+                    value="Custom Trained MobileNetV2",
+                    label="Age Prediction Model",
+                    info="Custom Trained MobileNetV2 regression model is highly optimized for accuracy."
+                )
+                detector_backend = gr.Dropdown(
+                    choices=["ssd", "opencv", "mediapipe", "retinaface", "mtcnn"],
+                    value="ssd",
+                    label="Face Detector Backend",
+                    info="SSD is fast & accurate. RetinaFace is most accurate but slower."
+                )
+                
+            smoothing_factor = gr.Slider(
+                minimum=1,
+                maximum=20,
+                value=8,
+                step=1,
+                label="Prediction Smoothing (Flicker Reduction)",
+                info="Higher values average ages over more frames to reduce jumps/flicker."
+            )
+
+        gr.HTML("""
+        <div style='text-align:center; color:#64748b; margin-top:1.5rem; font-size:0.85rem;'>
+            Powered by DeepFace · OpenCV · MobileNetV2 · Gradio &nbsp;|&nbsp; No data stored
+        </div>
+        """)
+
+        # Stream binding
+        webcam_input.stream(
+            fn=detect_age_in_frame,
+            inputs=[webcam_input, model_type, detector_backend, smoothing_factor],
+            outputs=output_image,
+            stream_every=0.3,  # 300ms stream rate for smooth real-time response
         )
 
-    gr.HTML("""
-    <div style='text-align:center; color:#64748b; margin-top:1.5rem; font-size:0.85rem;'>
-        Powered by DeepFace · OpenCV · MobileNetV2 · Gradio &nbsp;|&nbsp; No data stored
-    </div>
-    """)
-
-    # Stream binding
-    webcam_input.stream(
-        fn=detect_age_in_frame,
-        inputs=[webcam_input, model_type, detector_backend, smoothing_factor],
-        outputs=output_image,
-        stream_every=0.3,  # 300ms stream rate for smooth real-time response
+    # Wire up login logic
+    login_btn.click(
+        fn=check_login,
+        inputs=[username_input, password_input],
+        outputs=[login_panel, app_panel]
     )
 
 if __name__ == "__main__":
-    # Launch app with simple login authentication page
-    demo.launch(
-        auth=("admin", "admin123"),
-        auth_message="Please enter your login details to access the Real-Time Age Detection application."
-    )
+    demo.launch()
