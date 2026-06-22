@@ -52,7 +52,40 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
     Returns:
       - annotated RGB frame
     """
+    print(f"[DEBUG] Received frame: type={type(frame)}")
+    if isinstance(frame, np.ndarray):
+        print(f"[DEBUG] Frame shape={frame.shape}")
+    elif isinstance(frame, dict):
+        print(f"[DEBUG] Frame keys={list(frame.keys())}")
+    elif isinstance(frame, str):
+        print(f"[DEBUG] Frame path={frame}")
+
     if frame is None:
+        return None
+
+    # Handle Gradio dictionary structure (e.g. {'background': ..., 'layers': ..., 'composite': ...})
+    if isinstance(frame, dict):
+        if "composite" in frame and frame["composite"] is not None:
+            frame = frame["composite"]
+        elif "background" in frame and frame["background"] is not None:
+            frame = frame["background"]
+        else:
+            print("[DEBUG] Dictionary frame has no composite or background key.")
+            return None
+
+    # Convert PIL Image or filepath to NumPy array if necessary
+    if isinstance(frame, str):
+        frame = cv2.imread(frame)
+        if frame is not None:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    elif not isinstance(frame, np.ndarray):
+        try:
+            frame = np.array(frame)
+        except Exception as conv_err:
+            print(f"[ERROR] Failed to convert frame to numpy array: {conv_err}")
+            return None
+
+    if frame is None or frame.size == 0:
         return None
 
     # Update smoothing history size dynamically
@@ -171,11 +204,21 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
         return annotated_frame
 
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Exception in detect_age_in_frame: {e}")
+        traceback.print_exc()
         # Show message on screen during loading/warmup
-        err_frame = frame.copy()
-        cv2.putText(err_frame, "Detecting...", (10, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-        return err_frame
+        try:
+            if isinstance(frame, np.ndarray):
+                err_frame = frame.copy()
+            else:
+                err_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(err_frame, "Detecting...", (10, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            return err_frame
+        except Exception as inner_e:
+            print(f"[ERROR] Exception in error fallback drawing: {inner_e}")
+            return None
 
 
 # ── Gradio UI ──────────────────────────────────────────────────────
@@ -333,4 +376,8 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    # Launch app with simple login authentication page
+    demo.launch(
+        auth=("admin", "admin123"),
+        auth_message="Please enter your login details to access the Real-Time Age Detection application."
+    )
