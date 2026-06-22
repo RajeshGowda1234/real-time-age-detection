@@ -10,35 +10,18 @@ import threading
 
 # ── Model & Startup Setup ──────────────────────────────────────────
 
-# Load custom model globally at startup if it exists
+# Load custom model globally at startup if it exists (using compile=False to save memory and avoid training state deserialization errors)
 CUSTOM_MODEL_PATH = "models/best_age_model.h5"
 custom_model = None
 if os.path.exists(CUSTOM_MODEL_PATH):
     try:
-        custom_model = tf.keras.models.load_model(CUSTOM_MODEL_PATH)
+        custom_model = tf.keras.models.load_model(CUSTOM_MODEL_PATH, compile=False)
         print("Loaded custom age model successfully.")
     except Exception as e:
         print("Error loading custom model:", e)
 
 # Global smoother dictionary to handle smoothing history
 history_deque = deque(maxlen=8)
-
-def warmup_models():
-    # Preload the default models so the user doesn't experience a delay on first stream frame
-    try:
-        from deepface import DeepFace
-        dummy_img = np.zeros((224, 224, 3), dtype=np.uint8)
-        print("Warming up DeepFace models...")
-        # Warmup SSD detector
-        _ = DeepFace.extract_faces(dummy_img, detector_backend="ssd", enforce_detection=False)
-        # Warmup DeepFace age model
-        _ = DeepFace.analyze(dummy_img, actions=["age"], detector_backend="opencv", enforce_detection=False, silent=True)
-        print("DeepFace models warmed up successfully.")
-    except Exception as e:
-        print("Warmup failed:", e)
-
-# Run warmup in a background thread so it doesn't block the UI launch
-threading.Thread(target=warmup_models, daemon=True).start()
 
 
 # ── Frame Processing ───────────────────────────────────────────────
