@@ -10,15 +10,21 @@ import threading
 
 # ── Model & Startup Setup ──────────────────────────────────────────
 
-# Load custom model globally at startup if it exists (using compile=False to save memory and avoid training state deserialization errors)
-CUSTOM_MODEL_PATH = "models/best_age_model.h5"
-custom_model = None
+# Load custom model globally at startup using TFLite
+CUSTOM_MODEL_PATH = "models/best_age_model.tflite"
+custom_model_interpreter = None
+input_details = None
+output_details = None
+
 if os.path.exists(CUSTOM_MODEL_PATH):
     try:
-        custom_model = tf.keras.models.load_model(CUSTOM_MODEL_PATH, compile=False)
-        print("Loaded custom age model successfully.")
+        custom_model_interpreter = tf.lite.Interpreter(model_path=CUSTOM_MODEL_PATH)
+        custom_model_interpreter.allocate_tensors()
+        input_details = custom_model_interpreter.get_input_details()
+        output_details = custom_model_interpreter.get_output_details()
+        print("Loaded custom TFLite age model successfully.")
     except Exception as e:
-        print("Error loading custom model:", e)
+        print("Error loading custom TFLite model:", e)
 
 # Global smoother dictionary to handle smoothing history
 history_deque = deque(maxlen=8)
@@ -164,8 +170,10 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
                 preprocessed = np.expand_dims(preprocessed, axis=0)
 
                 # Run prediction
-                if custom_model is not None:
-                    predicted_age = custom_model.predict(preprocessed, verbose=0)[0][0]
+                if custom_model_interpreter is not None:
+                    custom_model_interpreter.set_tensor(input_details[0]['index'], preprocessed)
+                    custom_model_interpreter.invoke()
+                    predicted_age = float(custom_model_interpreter.get_tensor(output_details[0]['index'])[0][0])
                 else:
                     predicted_age = 23.0  # fallback mock
 
