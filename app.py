@@ -118,106 +118,64 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
         # Draw frame base (annotated frame starts as a copy of the input frame)
         annotated_frame = frame.copy()
 
-        if model_type == "DeepFace VGG-Face (Default)":
-            # Direct DeepFace analysis
-            results = DeepFace.analyze(
-                bgr,
-                actions=["age"],
-                enforce_detection=False,
-                detector_backend=detector_backend,
-                silent=True,
+        # Use DeepFace to extract faces/bounding boxes
+        faces = DeepFace.extract_faces(
+            bgr,
+            detector_backend=detector_backend,
+            enforce_detection=False,
+            align=True,
+        )
+
+        for face_info in faces:
+            confidence = face_info.get("confidence", 0)
+            # Ignore face if confidence is too low (only if detector is not opencv/enforce_detection=False)
+            if confidence < 0.1 and detector_backend not in ["opencv"]:
+                continue
+
+            facial_area = face_info.get("facial_area", {})
+            x = facial_area.get("x", 0)
+            y = facial_area.get("y", 0)
+            w = facial_area.get("w", 0)
+            h = facial_area.get("h", 0)
+
+            if w == 0 or h == 0:
+                continue
+
+            # Crop from RGB frame (since custom model expects RGB)
+            face_crop = frame[max(0, y):y+h, max(0, x):x+w]
+            if face_crop.size == 0:
+                continue
+
+            # Resize to (224, 224)
+            face_crop_resized = cv2.resize(face_crop, (224, 224))
+
+            # Preprocess for MobileNetV2
+            preprocessed = preprocess_input(face_crop_resized.astype(np.float32))
+            preprocessed = np.expand_dims(preprocessed, axis=0)
+
+            # Run prediction
+            if custom_model_interpreter is not None:
+                custom_model_interpreter.set_tensor(input_details[0]['index'], preprocessed)
+                custom_model_interpreter.invoke()
+                predicted_age = float(custom_model_interpreter.get_tensor(output_details[0]['index'])[0][0])
+            else:
+                predicted_age = 23.0  # fallback mock
+
+            # Add to smoothing history
+            history_deque.append(predicted_age)
+            smoothed_age = int(round(np.mean(history_deque)))
+
+            age_text = f"Age: {smoothed_age}"
+
+            # Draw bounding box and label
+            cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 128, 255), 2)
+            (tw, th), _ = cv2.getTextSize(age_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+            cv2.rectangle(annotated_frame, (x, y - th - 12), (x + tw + 10, y), (0, 90, 180), -1)
+            cv2.putText(
+                annotated_frame, age_text,
+                (x + 5, y - 5),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA,
             )
-
-            if isinstance(results, dict):
-                results = [results]
-
-            for res in results:
-                region = res.get("region", {})
-                age = res.get("age", None)
-
-                x = region.get("x", 0)
-                y = region.get("y", 0)
-                w = region.get("w", 0)
-                h = region.get("h", 0)
-
-                if w == 0 or h == 0 or age is None:
-                    continue
-
-                # Add to smoothing history
-                history_deque.append(age)
-                smoothed_age = int(round(np.mean(history_deque)))
-
-                age_text = f"Age: {smoothed_age}"
-
-                # Draw bounding box and label in RGB (since annotated_frame is RGB)
-                cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 255, 128), 2)
-                (tw, th), _ = cv2.getTextSize(age_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                cv2.rectangle(annotated_frame, (x, y - th - 12), (x + tw + 10, y), (0, 180, 90), -1)
-                cv2.putText(
-                    annotated_frame, age_text,
-                    (x + 5, y - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA,
-                )
-
-        else:  # Custom Trained MobileNetV2
-            # Use DeepFace to extract faces/bounding boxes
-            faces = DeepFace.extract_faces(
-                bgr,
-                detector_backend=detector_backend,
-                enforce_detection=False,
-                align=True,
-            )
-
-            for face_info in faces:
-                confidence = face_info.get("confidence", 0)
-                # Ignore face if confidence is too low (only if detector is not opencv/enforce_detection=False)
-                if confidence < 0.25 and detector_backend not in ["opencv"]:
-                    continue
-
-                facial_area = face_info.get("facial_area", {})
-                x = facial_area.get("x", 0)
-                y = facial_area.get("y", 0)
-                w = facial_area.get("w", 0)
-                h = facial_area.get("h", 0)
-
-                if w == 0 or h == 0:
-                    continue
-
-                # Crop from RGB frame (since custom model expects RGB)
-                face_crop = frame[max(0, y):y+h, max(0, x):x+w]
-                if face_crop.size == 0:
-                    continue
-
-                # Resize to (224, 224)
-                face_crop_resized = cv2.resize(face_crop, (224, 224))
-
-                # Preprocess for MobileNetV2
-                preprocessed = preprocess_input(face_crop_resized.astype(np.float32))
-                preprocessed = np.expand_dims(preprocessed, axis=0)
-
-                # Run prediction
-                if custom_model_interpreter is not None:
-                    custom_model_interpreter.set_tensor(input_details[0]['index'], preprocessed)
-                    custom_model_interpreter.invoke()
-                    predicted_age = float(custom_model_interpreter.get_tensor(output_details[0]['index'])[0][0])
-                else:
-                    predicted_age = 23.0  # fallback mock
-
-                # Add to smoothing history
-                history_deque.append(predicted_age)
-                smoothed_age = int(round(np.mean(history_deque)))
-
-                age_text = f"Age: {smoothed_age}"
-
-                # Draw bounding box and label
-                cv2.rectangle(annotated_frame, (x, y), (x + w, y + h), (0, 128, 255), 2)
-                (tw, th), _ = cv2.getTextSize(age_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                cv2.rectangle(annotated_frame, (x, y - th - 12), (x + tw + 10, y), (0, 90, 180), -1)
-                cv2.putText(
-                    annotated_frame, age_text,
-                    (x + 5, y - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA,
-                )
 
         return annotated_frame
 
@@ -271,55 +229,14 @@ footer {
     display: none !important; 
 }
 
-/* Single Frame Camera Container */
+/* Removed absolute positioning overlay hacks */
 .camera-wrapper {
-    position: relative;
     width: 100%;
-    max-width: 640px;
     margin: 0 auto 1.5rem auto;
     border-radius: 16px;
-    border: 1px solid #1e293b;
     background: #111827;
-    overflow: hidden;
+    padding: 1rem;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-
-/* Ensure the webcam input fills the wrapper */
-#webcam-input {
-    width: 100% !important;
-    border: none !important;
-    background: transparent !important;
-}
-
-/* Position the detection output image directly on top of the webcam feed */
-#output-image {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    z-index: 10 !important;
-    pointer-events: none !important; /* Clicks and hovers pass through to start/stop the camera below */
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-
-/* Make sure the output image fits and overlays perfectly */
-#output-image img {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: cover !important;
-    background: transparent !important;
-}
-
-/* Hide all empty/placeholder states of the output image so the webcam controls are accessible */
-#output-image .empty,
-#output-image .image-container:not(.preview),
-#output-image [data-testid="block-info"],
-#output-image .stage-header,
-#output-image .upload-container {
-    display: none !important;
 }
 
 /* Style the settings panel */
@@ -409,17 +326,16 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
         gr.HTML("<h1>🎯 Real-Time Age Detection</h1>")
         gr.HTML('<p class="subtitle">Click the camera below → allow access → see your age detected in real-time!</p>')
 
-        # Camera Single-Frame Overlay Container
-        with gr.Column(elem_classes="camera-wrapper"):
+        # Camera View Side-by-Side
+        with gr.Row(elem_classes="camera-wrapper"):
             webcam_input = gr.Image(
                 sources=["webcam"],
                 streaming=True,
-                show_label=False,
-                elem_id="webcam-input",
+                label="Live Webcam",
             )
             output_image = gr.Image(
-                show_label=False,
-                elem_id="output-image",
+                label="AI Prediction Output",
+                interactive=False
             )
 
         # Settings Control Panel
@@ -428,10 +344,10 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
             
             with gr.Row():
                 model_type = gr.Dropdown(
-                    choices=["Custom Trained MobileNetV2", "DeepFace VGG-Face (Default)"],
+                    choices=["Custom Trained MobileNetV2"],
                     value="Custom Trained MobileNetV2",
                     label="Age Prediction Model",
-                    info="Custom Trained MobileNetV2 regression model is highly optimized for accuracy."
+                    info="Custom Trained MobileNetV2 regression model is highly optimized for accuracy and low memory usage."
                 )
                 detector_backend = gr.Dropdown(
                     choices=["opencv", "ssd", "retinaface", "mtcnn", "mediapipe", "dlib"],
