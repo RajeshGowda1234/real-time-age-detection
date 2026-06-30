@@ -3,8 +3,7 @@ import gradio as gr
 import cv2
 import numpy as np
 import os
-import tensorflow as tf
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+# (Removed heavy TensorFlow imports to save memory)
 from collections import deque
 import threading
 import json
@@ -44,7 +43,12 @@ output_details = None
 
 if os.path.exists(CUSTOM_MODEL_PATH):
     try:
-        custom_model_interpreter = tf.lite.Interpreter(model_path=CUSTOM_MODEL_PATH)
+        try:
+            import tflite_runtime.interpreter as tflite
+        except ImportError:
+            import tensorflow.lite as tflite
+            
+        custom_model_interpreter = tflite.Interpreter(model_path=CUSTOM_MODEL_PATH)
         custom_model_interpreter.allocate_tensors()
         input_details = custom_model_interpreter.get_input_details()
         output_details = custom_model_interpreter.get_output_details()
@@ -110,37 +114,20 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
         history_deque = deque(maxlen=int(smoothing_factor))
 
     try:
-        from deepface import DeepFace
+        # Load OpenCV Haar Cascade (runs instantly on CPU with zero downloads)
+        cascade_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+        face_cascade = cv2.CascadeClassifier(cascade_path)
 
-        # DeepFace expects BGR for face detection/analysis
-        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # OpenCV expects grayscale for Haar Cascades
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
 
         # Draw frame base (annotated frame starts as a copy of the input frame)
         annotated_frame = frame.copy()
 
-        # Use DeepFace to extract faces/bounding boxes
-        faces = DeepFace.extract_faces(
-            bgr,
-            detector_backend=detector_backend,
-            enforce_detection=False,
-            align=True,
-        )
+        # Detect faces instantly
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
-        for face_info in faces:
-            confidence = face_info.get("confidence", 0)
-            # Ignore face if confidence is too low (only if detector is not opencv/enforce_detection=False)
-            if confidence < 0.1 and detector_backend not in ["opencv"]:
-                continue
-
-            facial_area = face_info.get("facial_area", {})
-            x = facial_area.get("x", 0)
-            y = facial_area.get("y", 0)
-            w = facial_area.get("w", 0)
-            h = facial_area.get("h", 0)
-
-            if w == 0 or h == 0:
-                continue
-
+        for (x, y, w, h) in faces:
             # Crop from RGB frame (since custom model expects RGB)
             face_crop = frame[max(0, y):y+h, max(0, x):x+w]
             if face_crop.size == 0:
@@ -149,11 +136,11 @@ def detect_age_in_frame(frame, model_type, detector_backend, smoothing_factor):
             # Resize to (224, 224)
             face_crop_resized = cv2.resize(face_crop, (224, 224))
 
-            # Preprocess for MobileNetV2
-            preprocessed = preprocess_input(face_crop_resized.astype(np.float32))
+            # Preprocess for MobileNetV2 (manual math instead of keras preprocess_input)
+            preprocessed = (face_crop_resized.astype(np.float32) / 127.5) - 1.0
             preprocessed = np.expand_dims(preprocessed, axis=0)
 
-            # Run prediction
+            # Run prediction using the TFLite runtime
             if custom_model_interpreter is not None:
                 custom_model_interpreter.set_tensor(input_details[0]['index'], preprocessed)
                 custom_model_interpreter.invoke()
