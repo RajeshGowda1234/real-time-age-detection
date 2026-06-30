@@ -7,8 +7,34 @@ import tensorflow as tf
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 from collections import deque
 import threading
+import json
+import hashlib
 
 # ── Model & Startup Setup ──────────────────────────────────────────
+
+USERS_FILE = "users.json"
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        # Create default admin user
+        default_users = {"admin": hash_password("admin123")}
+        with open(USERS_FILE, 'w') as f:
+            json.dump(default_users, f)
+        return default_users
+    try:
+        with open(USERS_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_users(users_db):
+    with open(USERS_FILE, 'w') as f:
+        json.dump(users_db, f)
+
+
 
 # Load custom model globally at startup using TFLite
 CUSTOM_MODEL_PATH = "models/best_age_model.tflite"
@@ -322,10 +348,32 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
     
     # Custom Login State
     def check_login(username, password):
-        if username == "admin" and password == "admin123":
+        users_db = load_users()
+        if username in users_db and users_db[username] == hash_password(password):
             return [gr.update(visible=False), gr.update(visible=True)]
         else:
             raise gr.Error("Incorrect username or password.")
+
+    def register_user(username, password, confirm_password):
+        if not username or not password:
+            raise gr.Error("Username and password cannot be empty.")
+        if password != confirm_password:
+            raise gr.Error("Passwords do not match.")
+        
+        users_db = load_users()
+        if username in users_db:
+            raise gr.Error("Username already exists. Please choose another.")
+        
+        users_db[username] = hash_password(password)
+        save_users(users_db)
+        gr.Info(f"Account '{username}' created successfully! Please log in.")
+        return [gr.update(visible=True), gr.update(visible=False)]
+
+    def show_signup():
+        return [gr.update(visible=False), gr.update(visible=True)]
+
+    def show_login():
+        return [gr.update(visible=True), gr.update(visible=False)]
 
     # ── Login Screen ──
     with gr.Column(visible=True, elem_classes="login-container") as login_panel:
@@ -336,6 +384,25 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
             username_input = gr.Textbox(label="Username", placeholder="admin", interactive=True)
             password_input = gr.Textbox(label="Password", type="password", placeholder="admin123", interactive=True)
             login_btn = gr.Button("Sign In", variant="primary", size="lg")
+            
+        gr.HTML("<hr style='margin-top: 1.5rem; border-color: #334155;'>")
+        gr.HTML("<p style='text-align:center; color:#94a3b8; font-size:0.9rem; margin-top:0.5rem;'>Don't have an account?</p>")
+        to_signup_btn = gr.Button("Create an Account", variant="secondary")
+
+    # ── Sign Up Screen ──
+    with gr.Column(visible=False, elem_classes="login-container") as signup_panel:
+        gr.HTML("<h1 style='font-size:2rem; margin-bottom:0.5rem;'>✨ Create Account</h1>")
+        gr.HTML('<p class="subtitle" style="margin-bottom:1.5rem;">Join us to start using real-time age detection.</p>')
+        
+        with gr.Column():
+            new_username = gr.Textbox(label="Choose a Username", placeholder="e.g. john_doe", interactive=True)
+            new_password = gr.Textbox(label="Create Password", type="password", interactive=True)
+            confirm_password = gr.Textbox(label="Confirm Password", type="password", interactive=True)
+            register_btn = gr.Button("Sign Up", variant="primary", size="lg")
+            
+        gr.HTML("<hr style='margin-top: 1.5rem; border-color: #334155;'>")
+        gr.HTML("<p style='text-align:center; color:#94a3b8; font-size:0.9rem; margin-top:0.5rem;'>Already have an account?</p>")
+        to_login_btn = gr.Button("Back to Login", variant="secondary")
 
     # ── Main Application Dashboard ──
     with gr.Column(visible=False) as app_panel:
@@ -402,6 +469,17 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
         inputs=[username_input, password_input],
         outputs=[login_panel, app_panel]
     )
+
+    # Wire up signup logic
+    register_btn.click(
+        fn=register_user,
+        inputs=[new_username, new_password, confirm_password],
+        outputs=[login_panel, signup_panel]
+    )
+
+    # Wire up screen toggles
+    to_signup_btn.click(fn=show_signup, inputs=[], outputs=[login_panel, signup_panel])
+    to_login_btn.click(fn=show_login, inputs=[], outputs=[login_panel, signup_panel])
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
