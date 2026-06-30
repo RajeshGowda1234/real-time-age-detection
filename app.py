@@ -434,10 +434,10 @@ with gr.Blocks(css=CSS, title="Real-Time Age Detection") as demo:
                     info="Custom Trained MobileNetV2 regression model is highly optimized for accuracy."
                 )
                 detector_backend = gr.Dropdown(
-                    choices=["ssd", "opencv", "mediapipe", "retinaface", "mtcnn"],
-                    value="ssd",
+                    choices=["opencv", "ssd", "retinaface", "mtcnn", "mediapipe", "dlib"],
+                    value="opencv",
                     label="Face Detector Backend",
-                    info="SSD is fast & accurate. RetinaFace is most accurate but slower."
+                    info="OpenCV is the fastest and most reliable for CPU servers like Render's free tier."
                 )
                 
             smoothing_factor = gr.Slider(
